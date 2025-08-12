@@ -129,6 +129,7 @@ app.post('/', async (req, res) => {
     res.json({
       success: true,
       runId: runId,
+      conversationId: finalConversationId,
       chatDone: chatDone
     });
 
