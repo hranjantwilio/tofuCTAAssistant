@@ -53,7 +53,7 @@ app.post('/', async (req, res) => {
         finalConversationId = postResponse.data.conversation.id;
         console.log(`Conversation created with ID: ${finalConversationId}`);
       } catch (postError) {
-        console.error('Failed to create conversation:', postError.message);
+        console.error('Failed to create conversation:', JSON.stringify(postError.message));
         throw new Error(`Conversation creation failed: ${postError.response?.data || postError.message}`);
       }
     } else {
