@@ -302,8 +302,34 @@ async function processJobAsync({ sfdcId, sfdcToken, access_token, input, context
   const sfdcObject = process.env.SFDC_OBJECT_API_NAME || 'WO_Conversation__c';
   const patchUrl = `${instanceUrl}/services/data/v57.0/sobjects/${sfdcObject}/${sfdcId}`;
 
+  // Extract assistant response content (prefer MARKDOWN part) from chatDoneResult
+  let assistantContent = '';
+  try {
+    if (Array.isArray(chatDoneResult)) {
+      // Find the first message where role indicates assistant
+      const assistantEntry = chatDoneResult.find(m => (m.role && m.role.toUpperCase() === 'ASSISTANT'));
+      if (assistantEntry) {
+        // Prefer parts with type MARKDOWN
+        if (Array.isArray(assistantEntry.parts) && assistantEntry.parts.length > 0) {
+          const md = assistantEntry.parts.find(p => p.type && p.type.toUpperCase() === 'MARKDOWN');
+          if (md && md.content) assistantContent = md.content;
+          else if (assistantEntry.parts[0].content) assistantContent = assistantEntry.parts[0].content;
+        } else if (assistantEntry.content) {
+          assistantContent = assistantEntry.content;
+        }
+      }
+    } else if (typeof chatDoneResult === 'string') {
+      assistantContent = chatDoneResult;
+    }
+  } catch (e) {
+    assistantContent = Array.isArray(chatDoneResult) ? JSON.stringify(chatDoneResult) : String(chatDoneResult || '');
+  }
+
+  // Fallback: store full result if no assistant content found
+  if (!assistantContent) assistantContent = Array.isArray(chatDoneResult) ? JSON.stringify(chatDoneResult) : (chatDoneResult || '');
+
   const patchPayload = {
-    Conversation_History__c: Array.isArray(chatDoneResult) ? JSON.stringify(chatDoneResult) : (chatDoneResult || ''),
+    Conversation_History__c: assistantContent,
     Chat_Done__c: true
   };
 
