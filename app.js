@@ -245,6 +245,14 @@ app.post('/jobs', async (req, res) => {
       sfdcId = createResp.data.id;
     }
 
+    // Ensure record is marked as processing (Chat_Done__c = false) and clear current_conversation__c
+    try {
+      const patchUrlProcessing = `${instanceUrl}/services/data/v57.0/sobjects/${sfdcObject}/${sfdcId}`;
+      await axios.patch(patchUrlProcessing, { Chat_Done__c: false, current_conversation__c: '' }, { headers });
+    } catch (ppErr) {
+      console.error('Failed to mark record processing:', ppErr.message);
+    }
+
     // Return the Salesforce record id immediately to the caller
     res.status(201).json({ recordId: sfdcId });
 
@@ -411,9 +419,11 @@ async function processJobAsync({ sfdcId, sfdcToken, access_token, input, context
     }
   }
 
+
   const patchPayload = {
     Conversation_History__c: newHistory,
-    Chat_Done__c: true
+    Chat_Done__c: true,
+    current_conversation__c: assistantContent
   };
 
   const sfdcHeaders = { Authorization: `Bearer ${sfdcToken}`, 'Content-Type': 'application/json' };
