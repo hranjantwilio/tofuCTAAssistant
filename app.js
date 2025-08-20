@@ -171,31 +171,47 @@ app.post('/jobs', async (req, res) => {
       isProd = true
     } = req.body;
 
-    if (!sfdcToken) {
-      return res.status(400).json({ error: 'Missing required parameter: sfdcToken' });
+    if (!sfdcToken || !parentRecordId) {
+      return res.status(400).json({ error: 'Missing required parameter: sfdcToken and parentRecordId required' });
     }
 
-    // Create the Salesforce record synchronously in WO_Conversation__c (or SFDC_OBJECT_API_NAME)
-  const instanceUrl = SFDC_INSTANCE_URL;
-
+    const instanceUrl = SFDC_INSTANCE_URL;
     const sfdcObject = process.env.SFDC_OBJECT_API_NAME || 'WO_Conversation__c';
-    const createUrl = `${instanceUrl}/services/data/v57.0/sobjects/${sfdcObject}/`;
 
-    // Prepare payload using your custom fields
-    const createPayload = {
-      Conversation_Id__c: providedConversationId || null,
-      Parent_Record_Id__c: parentRecordId || null,
-      Conversation_History__c: initialConversationHistory || '',
-      Chat_Done__c: false
-    };
+    const headers = { Authorization: `Bearer ${sfdcToken}`, 'Content-Type': 'application/json' };
 
-    const headers = {
-      Authorization: `Bearer ${sfdcToken}`,
-      'Content-Type': 'application/json'
-    };
+    // Check for existing record by Parent_Record_Id__c
+    const soql = `SELECT Id, Conversation_Id__c, Conversation_History__c FROM ${sfdcObject} WHERE Parent_Record_Id__c='${encodeURIComponent(parentRecordId)}' LIMIT 1`;
+    const queryUrl = `${instanceUrl}/services/data/v57.0/query?q=${encodeURIComponent(soql)}`;
+    let sfdcId = null;
+    let existingConversationId = null;
+    let existingHistory = '';
 
-    const createResp = await axios.post(createUrl, createPayload, { headers });
-    const sfdcId = createResp.data.id;
+    try {
+      const qresp = await axios.get(queryUrl, { headers });
+      if (qresp.data && qresp.data.totalSize > 0 && qresp.data.records && qresp.data.records.length > 0) {
+        const rec = qresp.data.records[0];
+        sfdcId = rec.Id;
+        existingConversationId = rec.Conversation_Id__c || null;
+        existingHistory = rec.Conversation_History__c || '';
+      }
+    } catch (qerr) {
+      // Query failed; continue to create new record
+      console.error('SOQL query failed:', qerr.message);
+    }
+
+    if (!sfdcId) {
+      // Create new record
+      const createUrl = `${instanceUrl}/services/data/v57.0/sobjects/${sfdcObject}/`;
+      const createPayload = {
+        Conversation_Id__c: providedConversationId || null,
+        Parent_Record_Id__c: parentRecordId,
+        Conversation_History__c: initialConversationHistory || '',
+        Chat_Done__c: false
+      };
+      const createResp = await axios.post(createUrl, createPayload, { headers });
+      sfdcId = createResp.data.id;
+    }
 
     // Return the Salesforce record id immediately to the caller
     res.status(201).json({ recordId: sfdcId });
@@ -209,7 +225,7 @@ app.post('/jobs', async (req, res) => {
           access_token,
           input,
           context,
-          conversationId: providedConversationId || null,
+          conversationId: existingConversationId || providedConversationId || null,
           isProd
         });
       } catch (bgErr) {
@@ -328,8 +344,43 @@ async function processJobAsync({ sfdcId, sfdcToken, access_token, input, context
   // Fallback: store full result if no assistant content found
   if (!assistantContent) assistantContent = Array.isArray(chatDoneResult) ? JSON.stringify(chatDoneResult) : (chatDoneResult || '');
 
+  // Fetch current Conversation_History__c (in case it changed) and append the new assistantContent as <li>
+  const recordUrl = `${instanceUrl}/services/data/v57.0/sobjects/${sfdcObject}/${sfdcId}`;
+  let currentHistory = '';
+  try {
+    const rr = await axios.get(recordUrl, { headers: { Authorization: `Bearer ${sfdcToken}` } });
+    currentHistory = rr.data.Conversation_History__c || '';
+  } catch (e) {
+    // ignore - we'll create new history
+    console.error('Failed to fetch existing record history:', e.message);
+  }
+
+  // simple HTML escape
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  const newLi = `<li>${escapeHtml(assistantContent)}</li>`;
+  let newHistory = '';
+  if (!currentHistory || currentHistory.trim() === '') {
+    newHistory = `<ul>${newLi}</ul>`;
+  } else {
+    // attempt to insert into existing <ul> if present, else append new ul
+    const ulCloseIndex = currentHistory.lastIndexOf('</ul>');
+    if (ulCloseIndex !== -1) {
+      newHistory = currentHistory.slice(0, ulCloseIndex) + newLi + currentHistory.slice(ulCloseIndex);
+    } else {
+      newHistory = currentHistory + `<ul>${newLi}</ul>`;
+    }
+  }
+
   const patchPayload = {
-    Conversation_History__c: assistantContent,
+    Conversation_History__c: newHistory,
     Chat_Done__c: true
   };
 
