@@ -194,6 +194,7 @@ app.post('/jobs', async (req, res) => {
         sfdcId = rec.Id;
         existingConversationId = rec.Conversation_Id__c || null;
         existingHistory = rec.Conversation_History__c || '';
+        console.error('Using existing conversation:', existingConversationId);
       }
     } catch (qerr) {
       // Query failed; continue to create new record
@@ -208,7 +209,7 @@ app.post('/jobs', async (req, res) => {
       if (!access_token) {
         return res.status(400).json({ error: 'Missing access_token: required to initialize conversation when none exists' });
       }
-
+      console.log('Creating new conversation...');
       const domainForCreate = isProd ? 'https://www.twilio.com' : 'https://www.dev.twilio.com';
       const baseCreateUrl = `${domainForCreate}/wise-owl/api/v2/conversations`;
       const encodedAuthTokenLocal = Buffer.from(JSON.stringify({ authToken: access_token, authTokenType: INGRESS })).toString('base64');
@@ -265,7 +266,7 @@ app.post('/jobs', async (req, res) => {
           access_token,
           input,
           context,
-          conversationId: existingConversationId || providedConversationId || null,
+          conversationId: conversationIdToUse || null,
           isProd
         });
       } catch (bgErr) {
