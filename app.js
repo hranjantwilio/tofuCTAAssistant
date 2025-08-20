@@ -200,11 +200,43 @@ app.post('/jobs', async (req, res) => {
       console.error('SOQL query failed:', qerr.message);
     }
 
+    // Determine or initialize conversationId to use
+    let conversationIdToUse = existingConversationId || providedConversationId || null;
+
+    // If no conversationId yet, we must create one synchronously via external API
+    if (!conversationIdToUse) {
+      if (!access_token) {
+        return res.status(400).json({ error: 'Missing access_token: required to initialize conversation when none exists' });
+      }
+
+      const domainForCreate = isProd ? 'https://www.twilio.com' : 'https://www.dev.twilio.com';
+      const baseCreateUrl = `${domainForCreate}/wise-owl/api/v2/conversations`;
+      const encodedAuthTokenLocal = Buffer.from(JSON.stringify({ authToken: access_token, authTokenType: INGRESS })).toString('base64');
+      const createHeaders = {
+        'x-twilio-e2-ingress': INGRESS,
+        'x-twilio-e2-auth-token': encodedAuthTokenLocal,
+        'Content-Type': 'application/json'
+      };
+
+      const postResp = await axios.post(baseCreateUrl, { applicationId: APPLICATION_ID }, { headers: createHeaders });
+      conversationIdToUse = postResp.data.conversation?.id;
+
+      if (!conversationIdToUse) {
+        return res.status(500).json({ error: 'Failed to initialize conversation' });
+      }
+
+      // If record exists, patch it to set Conversation_Id__c
+      if (sfdcId) {
+        const patchUrlExisting = `${instanceUrl}/services/data/v57.0/sobjects/${sfdcObject}/${sfdcId}`;
+        await axios.patch(patchUrlExisting, { Conversation_Id__c: conversationIdToUse }, { headers });
+      }
+    }
+
     if (!sfdcId) {
-      // Create new record
+      // Create new record with conversation id
       const createUrl = `${instanceUrl}/services/data/v57.0/sobjects/${sfdcObject}/`;
       const createPayload = {
-        Conversation_Id__c: providedConversationId || null,
+        Conversation_Id__c: conversationIdToUse || null,
         Parent_Record_Id__c: parentRecordId,
         Conversation_History__c: initialConversationHistory || '',
         Chat_Done__c: false
