@@ -1,5 +1,7 @@
 const express = require('express');
 const axios = require('axios');
+const https = require('https');
+const compression = require('compression');
 const app = express();
 
 // Constants
@@ -11,6 +13,57 @@ const SFDC_INSTANCE_URL = process.env.SFDC_INSTANCE_URL || 'https://twlo--full.s
 // Middleware to parse JSON bodies
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+// Enable gzip compression for responses
+app.use(compression());
+
+// Keep-alive agent to reuse TCP/TLS connections
+const keepAliveAgent = new https.Agent({ keepAlive: true, maxSockets: parseInt(process.env.MAX_SOCKETS || '50') });
+
+// Dedicated axios instances for Twilio and Salesforce with sensible timeouts
+const axiosTwilio = axios.create({ httpsAgent: keepAliveAgent, timeout: parseInt(process.env.TWILIO_TIMEOUT_MS || '30000') });
+const axiosSfdc = axios.create({ httpsAgent: keepAliveAgent, timeout: parseInt(process.env.SFDC_TIMEOUT_MS || '15000') });
+
+// Simple retry helper for transient errors
+async function axiosRequestWithRetry(instance, config, retries = 2, backoffMs = 300) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await instance.request(config);
+    } catch (err) {
+      attempt++;
+      const status = err.response?.status;
+      const isRetryable = !err.response || (status >= 500 && status < 600);
+      if (!isRetryable || attempt > retries) throw err;
+      const wait = backoffMs * Math.pow(2, attempt - 1);
+      await new Promise(r => setTimeout(r, wait));
+    }
+  }
+}
+
+// Simple in-memory job queue with concurrency limit
+const jobsQueue = [];
+let activeJobs = 0;
+const MAX_CONCURRENT_JOBS = parseInt(process.env.MAX_CONCURRENT_JOBS || '5');
+function enqueueJob(job) {
+  jobsQueue.push(job);
+  maybeProcessQueue();
+}
+function maybeProcessQueue() {
+  while (activeJobs < MAX_CONCURRENT_JOBS && jobsQueue.length > 0) {
+    const job = jobsQueue.shift();
+    activeJobs++;
+    (async () => {
+      try {
+        await processJobAsync(job);
+      } catch (e) {
+        console.error('Background job failed:', e?.message || e);
+      } finally {
+        activeJobs--;
+        setImmediate(maybeProcessQueue);
+      }
+    })();
+  }
+}
 
 // Default POST endpoint
 app.post('/', async (req, res) => {
