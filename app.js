@@ -48,9 +48,12 @@ app.post('/', async (req, res) => {
     if (!finalConversationId) {
       try {
         console.log(`Creating conversation in ${domain}...`);
-        const postResponse = await axios.post(baseUrl, {
-          applicationId: APPLICATION_ID
-        }, { headers });
+        const postResponse = await axiosRequestWithRetry(axiosTwilio, {
+          method: 'post',
+          url: baseUrl,
+          data: { applicationId: APPLICATION_ID },
+          headers
+        });
 
         finalConversationId = postResponse.data.conversation.id;
         console.log(`Conversation created with ID: ${finalConversationId}`);
@@ -66,14 +69,17 @@ app.post('/', async (req, res) => {
     const putUrl = `${baseUrl}/${finalConversationId}`;
     try {
       console.log('Sending input to conversation...');
-      const putResponse = await axios.put(putUrl, {
-        applicationId: APPLICATION_ID,
-        input: input,
-        streamMode: "polling",
-        systemContext: {
-          pageContext: context
-        }
-      }, { headers });
+      const putResponse = await axiosRequestWithRetry(axiosTwilio, {
+        method: 'put',
+        url: putUrl,
+        data: {
+          applicationId: APPLICATION_ID,
+          input: input,
+          streamMode: "polling",
+          systemContext: { pageContext: context }
+        },
+        headers
+      });
 
       runId = putResponse.data.runId;
       console.log(`PUT request initiated with runId: ${runId}`);
@@ -95,7 +101,7 @@ app.post('/', async (req, res) => {
       await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
       
       try {
-        const pollResponse = await axios.get(pollUrl, { headers });
+  const pollResponse = await axiosRequestWithRetry(axiosTwilio, { method: 'get', url: pollUrl, headers });
         const responseData = pollResponse.data;
         
         console.log('Polling response received...');
@@ -171,7 +177,7 @@ app.post('/jobs', async (req, res) => {
       isProd = true
     } = req.body;
 
-    if (!sfdcToken || !parentRecordId) {
+  if (!sfdcToken || !parentRecordId) {
       return res.status(400).json({ error: 'Missing required parameter: sfdcToken and parentRecordId required' });
     }
 
@@ -188,7 +194,7 @@ app.post('/jobs', async (req, res) => {
     let existingHistory = '';
 
     try {
-      const qresp = await axios.get(queryUrl, { headers });
+      const qresp = await axiosRequestWithRetry(axiosSfdc, { method: 'get', url: queryUrl, headers });
       if (qresp.data && qresp.data.totalSize > 0 && qresp.data.records && qresp.data.records.length > 0) {
         const rec = qresp.data.records[0];
         sfdcId = rec.Id;
@@ -219,7 +225,7 @@ app.post('/jobs', async (req, res) => {
         'Content-Type': 'application/json'
       };
 
-      const postResp = await axios.post(baseCreateUrl, { applicationId: APPLICATION_ID }, { headers: createHeaders });
+  const postResp = await axiosRequestWithRetry(axiosTwilio, { method: 'post', url: baseCreateUrl, data: { applicationId: APPLICATION_ID }, headers: createHeaders });
       conversationIdToUse = postResp.data.conversation?.id;
 
       if (!conversationIdToUse) {
@@ -228,8 +234,8 @@ app.post('/jobs', async (req, res) => {
 
       // If record exists, patch it to set Conversation_Id__c
       if (sfdcId) {
-        const patchUrlExisting = `${instanceUrl}/services/data/v57.0/sobjects/${sfdcObject}/${sfdcId}`;
-        await axios.patch(patchUrlExisting, { Conversation_Id__c: conversationIdToUse }, { headers });
+  const patchUrlExisting = `${instanceUrl}/services/data/v57.0/sobjects/${sfdcObject}/${sfdcId}`;
+  await axiosRequestWithRetry(axiosSfdc, { method: 'patch', url: patchUrlExisting, data: { Conversation_Id__c: conversationIdToUse }, headers });
       }
     }
 
@@ -242,14 +248,14 @@ app.post('/jobs', async (req, res) => {
         Conversation_History__c: initialConversationHistory || '',
         Chat_Done__c: false
       };
-      const createResp = await axios.post(createUrl, createPayload, { headers });
-      sfdcId = createResp.data.id;
+  const createResp = await axiosRequestWithRetry(axiosSfdc, { method: 'post', url: createUrl, data: createPayload, headers });
+  sfdcId = createResp.data.id;
     }
 
     // Ensure record is marked as processing (Chat_Done__c = false) and clear current_conversation__c
     try {
-      const patchUrlProcessing = `${instanceUrl}/services/data/v57.0/sobjects/${sfdcObject}/${sfdcId}`;
-      await axios.patch(patchUrlProcessing, { Chat_Done__c: false, current_conversation__c: '' }, { headers });
+  const patchUrlProcessing = `${instanceUrl}/services/data/v57.0/sobjects/${sfdcObject}/${sfdcId}`;
+  await axiosRequestWithRetry(axiosSfdc, { method: 'patch', url: patchUrlProcessing, data: { Chat_Done__c: false, current_conversation__c: '' }, headers });
     } catch (ppErr) {
       console.error('Failed to mark record processing:', ppErr.message);
     }
@@ -257,23 +263,16 @@ app.post('/jobs', async (req, res) => {
     // Return the Salesforce record id immediately to the caller
     res.status(201).json({ recordId: sfdcId });
 
-    // Start async processing in background (don't await)
-    (async () => {
-      try {
-        await processJobAsync({
-          sfdcId,
-          sfdcToken,
-          access_token,
-          input,
-          context,
-          conversationId: conversationIdToUse || null,
-          isProd
-        });
-      } catch (bgErr) {
-        console.error('Background job failed:', bgErr?.message || bgErr);
-        // Optionally, patch SFDC record with failure info here
-      }
-    })();
+    // Enqueue async processing to be handled by in-process worker (respects concurrency limits)
+    enqueueJob({
+      sfdcId,
+      sfdcToken,
+      access_token,
+      input,
+      context,
+      conversationId: conversationIdToUse || null,
+      isProd
+    });
 
   } catch (err) {
     console.error('Failed to create SFDC record:', err.message);
@@ -308,7 +307,7 @@ async function processJobAsync({ sfdcId, sfdcToken, access_token, input, context
   // Step 1: Create conversation if necessary
   let finalConversationId = conversationId;
   if (!finalConversationId) {
-    const postResponse = await axios.post(baseUrl, { applicationId: APPLICATION_ID }, { headers });
+    const postResponse = await axiosRequestWithRetry(axiosTwilio, { method: 'post', url: baseUrl, data: { applicationId: APPLICATION_ID }, headers });
     finalConversationId = postResponse.data.conversation?.id;
   }
 
@@ -316,12 +315,7 @@ async function processJobAsync({ sfdcId, sfdcToken, access_token, input, context
 
   // Step 2: PUT input
   const putUrl = `${baseUrl}/${finalConversationId}`;
-  const putResp = await axios.put(putUrl, {
-    applicationId: APPLICATION_ID,
-    input,
-    streamMode: 'polling',
-    systemContext: { pageContext: context }
-  }, { headers });
+  const putResp = await axiosRequestWithRetry(axiosTwilio, { method: 'put', url: putUrl, data: { applicationId: APPLICATION_ID, input, streamMode: 'polling', systemContext: { pageContext: context } }, headers });
 
   const runId = putResp.data.runId;
   if (!runId) throw new Error('Failed to start conversation run');
@@ -336,7 +330,7 @@ async function processJobAsync({ sfdcId, sfdcToken, access_token, input, context
   while (!isDoneLocal) {
     await new Promise(r => setTimeout(r, 2000));
     try {
-      const pollResponse = await axios.get(pollUrl, { headers });
+  const pollResponse = await axiosRequestWithRetry(axiosTwilio, { method: 'get', url: pollUrl, headers });
       const responseData = pollResponse.data;
       consecutiveErrors = 0;
       if (Array.isArray(responseData) && responseData.length > 0) {
@@ -389,7 +383,7 @@ async function processJobAsync({ sfdcId, sfdcToken, access_token, input, context
   const recordUrl = `${instanceUrl}/services/data/v57.0/sobjects/${sfdcObject}/${sfdcId}`;
   let currentHistory = '';
   try {
-    const rr = await axios.get(recordUrl, { headers: { Authorization: `Bearer ${sfdcToken}` } });
+    const rr = await axiosRequestWithRetry(axiosSfdc, { method: 'get', url: recordUrl, headers: { Authorization: `Bearer ${sfdcToken}` } });
     currentHistory = rr.data.Conversation_History__c || '';
   } catch (e) {
     // ignore - we'll create new history
@@ -428,7 +422,7 @@ async function processJobAsync({ sfdcId, sfdcToken, access_token, input, context
   };
 
   const sfdcHeaders = { Authorization: `Bearer ${sfdcToken}`, 'Content-Type': 'application/json' };
-  await axios.patch(patchUrl, patchPayload, { headers: sfdcHeaders });
+  await axiosRequestWithRetry(axiosSfdc, { method: 'patch', url: patchUrl, data: patchPayload, headers: sfdcHeaders });
 
   console.log(`Background processing completed for SFDC record ${sfdcId}`);
 }
