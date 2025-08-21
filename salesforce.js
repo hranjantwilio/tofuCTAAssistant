@@ -501,7 +501,8 @@ async function collectAllCTAData(conn, recordId) {
     
     const accountId = fsr.Inquiry_Account__c;
     const primaryContactId = fsr.contact__c;
-    
+    console.log(`primaryContactId: ${primaryContactId}`);
+
     // Fetch all data in parallel for better performance
     const [
       accounts,
@@ -521,7 +522,7 @@ async function collectAllCTAData(conn, recordId) {
       getProductSummary(conn, accountId)
     ]);
     
-    console.log(`FSR record ${recordId} has accountId: ${accountId}, primaryContactId: ${primaryContactId || 'NONE'}`);
+    console.log(`FSR record ${recordId} has accountId: ${accountId}, primaryContactId: ${primaryContactId}`);
     
     // Get primary contact if it wasn't found in the account contacts
     let primaryContact = null;
