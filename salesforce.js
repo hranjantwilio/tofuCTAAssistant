@@ -507,6 +507,35 @@ async function collectAllCTAData(conn, recordId) {
       getProductSummary(conn, accountId)
     ]);
     
+    // Get primary contact if it wasn't found in the account contacts
+    let primaryContact = null;
+    if (primaryContactId) {
+      // Check if the primary contact is already in the contacts list
+      const primaryInList = contacts.find(c => c.Id === primaryContactId);
+      
+      if (!primaryInList) {
+        console.log(`Primary contact ${primaryContactId} not found in account contacts. Fetching directly...`);
+        try {
+          // Fetch the primary contact directly
+          const primaryContacts = await conn.sobject('Contact')
+            .select('Name, Id, Title, Email, Phone, Last_FSR_Activity__c')
+            .where({ Id: primaryContactId })
+            .execute();
+            
+          if (primaryContacts && primaryContacts.length > 0) {
+            primaryContact = primaryContacts[0];
+            // Add this contact to our contacts list
+            contacts.push(primaryContact);
+            console.log(`Successfully fetched primary contact: ${primaryContact.Name}`);
+          } else {
+            console.log(`Could not find primary contact with ID ${primaryContactId}`);
+          }
+        } catch (error) {
+          console.error(`Error fetching primary contact ${primaryContactId}:`, error);
+        }
+      }
+    }
+    
     // Also get tasks for the primary contact if available
     let contactTasks = [];
     if (primaryContactId) {
