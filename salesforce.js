@@ -281,13 +281,26 @@ function processAccountData(accounts) {
  * @returns {Array} Processed contact data
  */
 function processContactData(contacts, primaryContactId) {
-  if (!contacts || contacts.length === 0) return [];
+  if (!contacts || contacts.length === 0) {
+    console.log('No contacts to process in processContactData');
+    return [];
+  }
+  
+  console.log(`Processing ${contacts.length} contacts with primary contact ID: ${primaryContactId || 'NONE'}`);
+  
+  // Log all contacts to help with debugging
+  contacts.forEach((contact, index) => {
+    console.log(`Contact ${index+1}: ID=${contact.Id}, Name=${contact.Name}`);
+  });
   
   let hasPrimary = false;
   
   const contactDataList = contacts.map(contact => {
     const isPrimary = contact.Id === primaryContactId;
-    if (isPrimary) hasPrimary = true;
+    if (isPrimary) {
+      console.log(`Found primary contact: ${contact.Name} (${contact.Id})`);
+      hasPrimary = true;
+    }
     
     return {
       contactId: contact.Id,
@@ -304,6 +317,7 @@ function processContactData(contacts, primaryContactId) {
   
   // If no primary contact found and we have contacts, mark first as primary
   if (!hasPrimary && contactDataList.length > 0) {
+    console.log(`No primary contact matched ID ${primaryContactId}, defaulting to first contact: ${contactDataList[0].contactName} (${contactDataList[0].contactId})`);
     contactDataList[0].isPrimary = true;
   }
   
@@ -507,13 +521,17 @@ async function collectAllCTAData(conn, recordId) {
       getProductSummary(conn, accountId)
     ]);
     
+    console.log(`FSR record ${recordId} has accountId: ${accountId}, primaryContactId: ${primaryContactId || 'NONE'}`);
+    
     // Get primary contact if it wasn't found in the account contacts
     let primaryContact = null;
     if (primaryContactId) {
       // Check if the primary contact is already in the contacts list
       const primaryInList = contacts.find(c => c.Id === primaryContactId);
       
-      if (!primaryInList) {
+      if (primaryInList) {
+        console.log(`Primary contact ${primaryContactId} (${primaryInList.Name}) already found in account contacts`);
+      } else {
         console.log(`Primary contact ${primaryContactId} not found in account contacts. Fetching directly...`);
         try {
           // Fetch the primary contact directly
@@ -526,9 +544,15 @@ async function collectAllCTAData(conn, recordId) {
             primaryContact = primaryContacts[0];
             // Add this contact to our contacts list
             contacts.push(primaryContact);
-            console.log(`Successfully fetched primary contact: ${primaryContact.Name}`);
+            console.log(`Successfully fetched primary contact: ${primaryContact.Name} (${primaryContact.Id})`);
+            
+            // Log all contacts to confirm primary is now in list
+            console.log('Updated contacts list:');
+            contacts.forEach((contact, index) => {
+              console.log(`Contact ${index+1}: ID=${contact.Id}, Name=${contact.Name}${contact.Id === primaryContactId ? ' (PRIMARY)' : ''}`);
+            });
           } else {
-            console.log(`Could not find primary contact with ID ${primaryContactId}`);
+            console.log(`Could not find primary contact with ID ${primaryContactId} - it may be invalid or deleted`);
           }
         } catch (error) {
           console.error(`Error fetching primary contact ${primaryContactId}:`, error);
@@ -551,10 +575,16 @@ async function collectAllCTAData(conn, recordId) {
     const salesloftDataList = processSalesloftData(salesloftConversations);
     
     // Organize data into hierarchical structure matching Apex class
+    const primaryCTA = ctaDataList.find(cta => cta.isPrimary) || null;
+    const primaryContactObj = contactDataList.find(contact => contact.isPrimary) || null;
+    
+    console.log('Primary CTA:', primaryCTA ? `${primaryCTA.ctaName} (${primaryCTA.recordId})` : 'NONE');
+    console.log('Primary Contact:', primaryContactObj ? `${primaryContactObj.contactName} (${primaryContactObj.contactId})` : 'NONE');
+    
     const allData = {
       primaryContext: {
-        primaryCTA: ctaDataList.find(cta => cta.isPrimary) || null,
-        relatedContact: contactDataList.find(contact => contact.isPrimary) || null,
+        primaryCTA,
+        relatedContact: primaryContactObj,
         relatedOpportunities: [],
         contactActivities: contactTasksData,
         contactConversations: []
