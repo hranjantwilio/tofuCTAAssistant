@@ -93,7 +93,7 @@ async function getTaskRecords(conn, accountId) {
     const tasks = await conn.sobject('Task')
       .select('Id, Subject, ActivityDate, Description, CallDisposition, Owner.Name, Type, Who.Name, What.Name, Status, WhoId, WhatId')
       .where({ WhatId: accountId })
-      .orderBy('CreatedDate DESC')
+      .sort('CreatedDate DESC')
       .limit(50)
       .execute();
     
@@ -112,7 +112,7 @@ async function getTasksForContact(conn, contactId) {
     const tasks = await conn.sobject('Task')
       .select('Id, Subject, ActivityDate, Description, CallDisposition, Owner.Name, Type, Who.Name, What.Name, Status')
       .where({ WhoId: contactId })
-      .orderBy('CreatedDate DESC')
+      .sort('CreatedDate DESC')
       .limit(25)
       .execute();
     
@@ -129,7 +129,7 @@ async function getOpportunityRecords(conn, accountId) {
     const opportunities = await conn.sobject('Opportunity')
       .select('Name, Amount, StageName, CloseDate, OwnerId, Owner.Name, Id')
       .where({ AccountId: accountId, CreatedDate: { $gt: { $literal: 'LAST_N_MONTHS:6' } } })
-      .orderBy('CreatedDate DESC')
+      .sort('CreatedDate DESC')
       .limit(50)
       .execute();
     
@@ -164,7 +164,7 @@ async function getSalesloftConversationRecords(conn, accountId) {
       .select('accountid__c, attendeesdetails__c, createddate__c, DataSource__c, DataSourceObject__c, ' +
               'InternalOrganization__c, KQ_meetingid__c, meetingid__c, meetingsummary__c, meetingtranscript__c')
       .where({ accountid__c: accountId })
-      .orderBy('createddate__c DESC')
+      .sort('createddate__c DESC')
       .limit(50)
       .execute();
     
@@ -643,69 +643,82 @@ app.post('/jobs', async (req, res) => {
           input = `${message} ( Strictly use HTML output format and consider already provided data in previous request for analysis)`;
         } else {
           // For new conversation or no message, use the full prompt template
-          input = message || `You are a Senior Sales Research Analyst for Twilio SDR/AE teams. Your role is to read Salesforce CRM data (provided as JSON data), extract the most relevant and actionable insights, and produce a 360-degree, context-rich prospect briefing tailored for the specific Marketing CTA assigned.
+        input = message || `You are a Senior Sales Research Analyst for Twilio SDR/AE teams. Your role is to read Salesforce CRM data (provided as JSON data), extract the most relevant and actionable insights, and produce a 360-degree, context-rich prospect briefing tailored for the specific Marketing CTA assigned.
 
-        If a human research analyst has level 10 of knowledge, you will have level 280 of knowledge in this role. Be careful: you must produce high-quality, high-clarity results because if you don't, I will lose a critical sales opportunity. Give your best and be proud of your ability.
+            If a human research analyst has level 10 of knowledge, you will have level 280 of knowledge in this role. Be careful: you must produce high-quality, high-clarity results because if you don't, I will lose a critical sales opportunity. Give your best and be proud of your ability.
 
-        Here is the Salesforce CRM data in JSON format:
-        ${wrapperDataString}
+            Here is the Salesforce CRM data in JSON format:
+            ${wrapperDataString}
 
-        Your output must follow this exact structure in order:
+            Your output must follow this exact structure in order:
 
-        1. **CTA Overview – Strategic Rationale + Key Insight**
-        - Explain why this CTA exists for this account at this moment.
-        - Highlight the key triggering event, data point, or marketing signal.
+            1. **CTA Overview**
+              - Explain why this CTA exists for this account at this moment.
+              - Highlight the key triggering event, data point, or marketing signal.
 
-        2. **CTA-Related Account Summary – Strategic Opportunity + Key Insight**
-        - Provide account context (industry, size, region, key priorities).
-        - Show how this CTA ties to account-level trends, pains, and opportunities.
+            2. **Account Summary**
+              - Provide account context (industry, size, region, key priorities).
+              - Show how this CTA ties to account-level trends, pains, and opportunities.
 
-        3. **CTA-Related Contact Summary – Strategic Rationale + Key Insight**
-        - For the primary CTA contact, include name, title, responsibilities, decision-making authority, and recent relevant activities.
+            3. **Contact Summary**
+              - For the primary CTA contact, include name, title, responsibilities, decision-making authority, and recent relevant activities.
 
-        4. **Contact Activity Summary – Engagement Signal + Strategic Rationale**
-        - Summarize past and recent engagement with Twilio, including events, assets, meetings, and conversions.
-        - Interpret what this engagement likely signals about interest and readiness.
+            4. **Contact Activity Summary**
+              - Summarize past and recent engagement with Twilio, including events, assets, meetings, and conversions.
+              - Interpret what this engagement likely signals about interest and readiness.
 
-        5. **Previous SDR/AE Outcomes – Deal Context + Opportunity Shift**
-        - Always specify full name and role of the SDR and AE who last worked this account or contact.
-        - Summarize their specific contributions (e.g., "secured discovery meeting," "delivered technical ROI session").
-        - Note interaction style or relationship context (e.g., "built strong rapport with CTO," "gained early support from Ops Director").
-        - State previous outcome (paused, lost, delayed, moved to budget cycle, etc.).
-        - Clarify current relevance — are champions or blockers from prior cycles still in place and can they be leveraged?
+            5. **Previous SDR/AE Outcomes**
+              - Always specify full name and role of the SDR and AE who last worked this account or contact.
+              - Summarize their specific contributions (e.g., "secured discovery meeting," "delivered technical ROI session").
+              - Note interaction style or relationship context (e.g., "built strong rapport with CTO," "gained early support from Ops Director").
+              - State previous outcome (paused, lost, delayed, moved to budget cycle, etc.).
+              - Clarify current relevance — are champions or blockers from prior cycles still in place and can they be leveraged?
 
-        6. **Recommended Influencers – Name + Title + Influence Basis + Action Path**
-        - Identify most influencial contact based on past engagements, activities, discussions and salesloft conversations.
-        - Include a clear reasoning on why this contact is influencial citing conversations and interactions.
-        - Suggest how to engage them in this cycle.
+            6. **Recommended Influencers**
+              - Identify most influential contact based on past engagements, activities, discussions and salesloft conversations.
+              - Include a clear reasoning on why this contact is influential citing conversations and interactions.
+              - Suggest how to engage them in this cycle.
 
-        7. **Buying Signals & Urgency Factors – Trigger Event + Impact**
-        - Identify signals in the account that indicate urgency or high intent.
-        - Link these to potential timelines or competitive pressure.
+            7. **Buying Signals & Urgency Factors**
+              - Identify signals in the account that indicate urgency or high intent.
+              - Link these to potential timelines or competitive pressure.
 
-        8. **Competitor & Risk Insights – Competitive Position + Opportunity Leverage**
-        - Include any competitor presence or risk factors.
-        - Suggest ways to neutralize risks or differentiate Twilio.
+            8. **Competitor & Risk Insights**
+              - Include any competitor presence or risk factors.
+              - Suggest ways to neutralize risks or differentiate Twilio.
 
-        9. **Relevant Benefits for This Prospect – Context + Direct Impact**
-        - List 3–5 product or solution benefits tailored to the account's specific pains and goals.
+            9. **Relevant Benefits for This Prospect**
+              - List 3–5 product or solution benefits tailored to the account's specific pains and goals.
 
-        10. **Industry Peer Proof – Comparable Case Studies**
-            - Use https://customers.twilio.com/ to get this data, provide 2–3 examples of similar companies in the same industry/region that adopted Twilio solutions.
-            - Strictly pull use case, twilio products used, proof-points metrics present in the page and and the exact source link
-            - ALso provide Relevant Benefits, Postioning Tips and Closing Summary based on this analysis.
+            10. **Industry Peer Proof**
+                - Use https://customers.twilio.com/ to get this data, provide 2–3 examples of similar companies in the same industry/region that adopted Twilio solutions.
+                - Strictly pull use case, twilio products used, proof-points metrics present in the page and and the exact source link
+                - Also provide Relevant Benefits, Positioning Tips and Closing Summary based on this analysis.
 
-        11. **Suggested Outreach Narrative – Talk Track + Positioning Angle**
-            - Give a short, persuasive talk track tying the CTA signal to Twilio's value prop.
+            11. **Suggested Outreach Narrative**
+                - Give a short, persuasive talk track tying the CTA signal to Twilio's value prop.
 
-        12. **Action Recommendations – Action Path + Priority Level**
-            - List immediate next steps the SDR should take.
-            - Assign priority and explain why each action matters.
+            12. **Action Recommendations**
+                - List immediate next steps the SDR should take.
+                - Assign priority and explain why each action matters.
 
-        **Tone:** Clear, confident, consultative, and prospect-specific. Avoid generic phrasing. Every point must be backed by Salesforce data.
+            13. **Disposition Brief**
+                - Provide a clear recommendation on whether to CONVERT or REJECT this CTA based on the data analysis.
+                - Include specific reasoning citing key data points, engagement signals, timing factors, and opportunity potential.
+                - If recommending conversion, specify the qualification level (hot, warm, cold) and expected timeline.
+                - If recommending rejection, provide clear rationale and suggest alternative nurturing approaches.
 
-        **Output Format:** Rich text with headings and bold emphasis where useful, follow html tag structure, strictly not markdown`;
-        }
+            14. **Follow-up Email Template**
+                - Create a personalized email template ready for the SDR to send.
+                - Reference specific CTA triggers, account context, and relevant pain points identified in the analysis.
+                - Include appropriate Twilio value proposition tied to the prospect's situation.
+                - Suggest a clear call-to-action (meeting request, demo, discovery call, etc.).
+                - Keep tone professional yet conversational, avoiding generic sales language.
+
+            **Tone:** Clear, confident, consultative, and prospect-specific. Avoid generic phrasing. Every point must be backed by Salesforce data.
+
+            **Output Format:** Rich text with headings and bold emphasis where useful, follow html tag structure, strictly not markdown`;
+          }
         
         await processJobAsync({
           sfdcId,
