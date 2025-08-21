@@ -37,7 +37,7 @@ async function createSalesforceConnection(token) {
 async function getFSRRecord(conn, recordId) {
   try {
     const record = await conn.sobject('FSR__c')
-      .select('Id, Name, Inquiry_Account__c, contact__c')
+      .select('Id, Name, Inquiry_Account__c, Contact__c')
       .where({ Id: recordId })
       .limit(1)
       .execute();
@@ -500,8 +500,8 @@ async function collectAllCTAData(conn, recordId) {
     }
     
     const accountId = fsr.Inquiry_Account__c;
-    const primaryContactId = fsr.contact__c;
-    console.log(`primaryContactId: ${primaryContactId}`);
+    const primaryContactId = fsr.Contact__c;
+    console.log(`primaryContactId: ${primaryContactId} accountId: ${accountId} fsr: ${JSON.stringify(fsr)}`);
 
     // Fetch all data in parallel for better performance
     const [
