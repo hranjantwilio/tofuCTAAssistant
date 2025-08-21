@@ -93,7 +93,7 @@ async function getTaskRecords(conn, accountId) {
     const tasks = await conn.sobject('Task')
       .select('Id, Subject, ActivityDate, Description, CallDisposition, Owner.Name, Type, Who.Name, What.Name, Status, WhoId, WhatId')
       .where({ WhatId: accountId })
-      .sort('CreatedDate DESC')
+      .sort('-CreatedDate')
       .limit(50)
       .execute();
     
@@ -112,7 +112,7 @@ async function getTasksForContact(conn, contactId) {
     const tasks = await conn.sobject('Task')
       .select('Id, Subject, ActivityDate, Description, CallDisposition, Owner.Name, Type, Who.Name, What.Name, Status')
       .where({ WhoId: contactId })
-      .sort('CreatedDate DESC')
+      .sort('-CreatedDate')
       .limit(25)
       .execute();
     
@@ -128,8 +128,9 @@ async function getOpportunityRecords(conn, accountId) {
     // Query fields from the updated Apex class
     const opportunities = await conn.sobject('Opportunity')
       .select('Name, Amount, StageName, CloseDate, OwnerId, Owner.Name, Id')
-      .where({ AccountId: accountId, CreatedDate: { $gt: { $literal: 'LAST_N_MONTHS:6' } } })
-      .sort('CreatedDate DESC')
+      .where({ AccountId: accountId })
+      .where('CreatedDate >= LAST_N_MONTHS:6')
+      .sort('-CreatedDate')
       .limit(50)
       .execute();
     
@@ -164,7 +165,7 @@ async function getSalesloftConversationRecords(conn, accountId) {
       .select('accountid__c, attendeesdetails__c, createddate__c, DataSource__c, DataSourceObject__c, ' +
               'InternalOrganization__c, KQ_meetingid__c, meetingid__c, meetingsummary__c, meetingtranscript__c')
       .where({ accountid__c: accountId })
-      .sort('createddate__c DESC')
+      .sort('-createddate__c')
       .limit(50)
       .execute();
     
