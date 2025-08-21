@@ -141,13 +141,16 @@ async function processInBackground(params) {
     }
     
     // Build the prompt
+    console.log('Building prompt with conversation ID:', conversationId);
     const input = wiseowl.buildPrompt({
       message,
       conversationId,
       wrapperDataString
     });
+    console.log('Prompt built successfully, sending to WiseOwl');
     
     // Process the conversation with WiseOwl
+    console.log('Starting WiseOwl conversation processing');
     const result = await wiseowl.processConversation({
       accessToken: access_token,
       input,
@@ -155,6 +158,7 @@ async function processInBackground(params) {
       conversationId,
       isProd
     });
+    console.log('WiseOwl processing completed');
     
     // Update the Salesforce record with the result
     await salesforce.updateConversationRecord(conn, sfdcId, result.assistantContent);
