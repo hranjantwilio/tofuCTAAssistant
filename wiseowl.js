@@ -221,21 +221,18 @@ function buildPrompt(params) {
             - Strictly pull use case, twilio products used, proof-points metrics present in the page and and the exact source link
             - Also provide Relevant Benefits, Positioning Tips and Closing Summary based on this analysis.
 
-        11. **Suggested Outreach Narrative**
-            - Give a short, persuasive talk track tying the CTA signal to Twilio's value prop.
-
-        12. **Action Recommendations**
+        11. **Action Recommendations**
             - List immediate next steps the SDR should take.
             - Assign priority and explain why each action matters.
 
-        13. **Disposition Brief**
+        12. **Disposition Brief**
             - Provide a clear recommendation on whether to CONVERT or REJECT this CTA based on the data analysis.
             - Include specific reasoning citing key data points, engagement signals, timing factors, and opportunity potential.
             - If recommending conversion, specify the qualification level (hot, warm, cold) and expected timeline.
             - If recommending rejection, provide clear rationale and suggest alternative nurturing approaches.
 
-        14. **Follow-up Email Template**
-            - Create a personalized email template ready for the SDR to send.
+        13. **Follow-up Email Template**
+            - Create a personalized ,short, persuasive email template ready for the SDR to send.
             - Reference specific CTA triggers, account context, and relevant pain points identified in the analysis.
             - Include appropriate Twilio value proposition tied to the prospect's situation.
             - Suggest a clear call-to-action (meeting request, demo, discovery call, etc.).
