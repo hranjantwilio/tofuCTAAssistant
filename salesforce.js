@@ -756,6 +756,7 @@ async function updateConversationRecord(conn, sfdcId, assistantContent) {
   }
 
   const sfdcObject = process.env.SFDC_OBJECT_API_NAME || 'WO_Conversation__c';
+  const CHARACTER_LIMIT = 100000; // 100k character limit for conversation history
 
   try {
     // Fetch current record to get Conversation_History__c
@@ -774,6 +775,7 @@ async function updateConversationRecord(conn, sfdcId, assistantContent) {
 
     const newLi = `<li>${escapeHtml(assistantContent)}</li>`;
     let newHistory = '';
+    let shouldUpdateHistory = true;
     
     if (!currentHistory || currentHistory.trim() === '') {
       newHistory = `<ul>${newLi}</ul>`;
@@ -785,17 +787,29 @@ async function updateConversationRecord(conn, sfdcId, assistantContent) {
       } else {
         newHistory = currentHistory + `<ul>${newLi}</ul>`;
       }
+      
+      // Check if we're going to exceed the character limit
+      if (newHistory.length >= CHARACTER_LIMIT) {
+        console.log(`Conversation history would exceed ${CHARACTER_LIMIT} characters (${newHistory.length}). Skipping history update.`);
+        shouldUpdateHistory = false;
+      }
     }
 
-    // Update the record using jsforce
-    await conn.sobject(sfdcObject).update({
+    // Update the record using jsforce, conditionally including the history field
+    const updateFields = {
       Id: sfdcId,
-      Conversation_History__c: newHistory,
       Chat_Done__c: true,
       current_conversation__c: assistantContent
-    });
+    };
+    
+    // Only update the history if it won't exceed the character limit
+    if (shouldUpdateHistory) {
+      updateFields.Conversation_History__c = newHistory;
+    }
+    
+    await conn.sobject(sfdcObject).update(updateFields);
 
-    console.log(`Updated conversation record ${sfdcId} with new content`);
+    console.log(`Updated conversation record ${sfdcId} with new content${shouldUpdateHistory ? ' and history' : ' (history skipped due to size limit)'}`);
   } catch (error) {
     console.error('Error updating conversation record:', error);
   }
