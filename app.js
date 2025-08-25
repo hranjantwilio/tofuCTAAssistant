@@ -161,7 +161,7 @@ async function processInBackground(params) {
     console.log('WiseOwl processing completed');
     
     // Update the Salesforce record with the result
-    await salesforce.updateConversationRecord(conn, sfdcId, result.assistantContent);
+    await salesforce.updateConversationRecord(conn, sfdcId, result.assistantContent, !message);
     
     console.log(`Background processing completed for SFDC record ${sfdcId}`);
   } catch (bgErr) {
